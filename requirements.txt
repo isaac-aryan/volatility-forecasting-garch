@@ -38,6 +38,7 @@ requests==2.34.2
 rich==15.0.0
 scikit-learn==1.8.0
 scipy==1.17.1
+seaborn==0.13.2
 shap==0.51.0
 six==1.17.0
 slicer==0.0.8
