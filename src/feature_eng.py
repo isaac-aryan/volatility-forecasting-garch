@@ -1,15 +1,13 @@
 """
-step2_features.py
-=================
-Reads cleaned data from step1 and constructs:
+Reads cleaned data and constructs:
   - All predictive features (lagged returns, rolling stats, regime indicators,
     macro features, VRP proxy)
   - Target variable: y_t = ln(r²_{t+1})  — log of next day's squared return
 
 The feature matrix X and target vector y are saved as Parquet files.
-A feature correlation heatmap (Plot P3) is saved to results/.
+A feature correlation heatmap is saved to results/.
 
-Outputs (saved to data/processed/):
+Outputs:
     features_SPY.parquet
     features_AAPL.parquet
     features_JPM.parquet
@@ -29,7 +27,7 @@ from pathlib import Path
 
 warnings.filterwarnings("ignore")
 
-# ── Paths ──────────────────────────────────────────────────────────────────────
+# ── Paths
 
 ROOT      = Path(__file__).resolve().parent.parent
 RAW_DIR   = ROOT / "data" / "raw"
@@ -37,12 +35,12 @@ PROC_DIR  = ROOT / "data" / "processed"
 RES_DIR   = ROOT / "results"
 PROC_DIR.mkdir(parents=True, exist_ok=True)
 
-# ── Config ─────────────────────────────────────────────────────────────────────
+# ── Config
 
 TICKERS      = ["SPY", "AAPL", "JPM"]
-PRIMARY      = "SPY"          # main asset; AAPL and JPM are robustness checks
-LAGS         = [1, 2, 3, 5]  # which lags to use for return features
-ROLLING_WINDOWS = [5, 10, 21] # short, medium, monthly lookback windows
+PRIMARY      = "SPY"        
+LAGS         = [1, 2, 3, 5]  
+ROLLING_WINDOWS = [5, 10, 21]
 
 # VIX regime thresholds — used to create the ordinal regime bucket feature.
 # These same thresholds define the regime segments in the evaluation framework.
@@ -51,78 +49,50 @@ VIX_NORMAL   = 25
 VIX_ELEVATED = 35
 # Above 35 = Crisis (bucket 3)
 
-# ── Helper ─────────────────────────────────────────────────────────────────────
+# ── Helper
 
 def section(title):
     print(f"\n{'='*60}\n  {title}\n{'='*60}")
 
 
-# ── Feature construction ───────────────────────────────────────────────────────
+# ── Feature construction
 
 def build_features(ticker, returns, macro):
     """
     Constructs the full feature matrix for a single ticker.
-
-    Parameters
-    ----------
-    ticker  : str — e.g. "SPY"
-    returns : DataFrame — log returns for all tickers (from step1)
-    macro   : DataFrame — VIX and DGS10 aligned to trading calendar
-
-    Returns
-    -------
-    df : DataFrame with all features + 'target' column
-         Rows with any NaN (from lags or rolling windows) are dropped.
     """
-    r = returns[ticker].copy()   # log return series for this ticker
+    r = returns[ticker].copy() 
     df = pd.DataFrame(index=r.index)
 
-    # ── Section 3.1: Lagged return signals ────────────────────────────────────
+    # ── Lagged return signals
 
     for lag in LAGS:
         df[f"r_lag{lag}"] = r.shift(lag)
-        # r.shift(1) means: the value in row t is the return from t-1.
-        # This is how you ensure no look-ahead: at time t, you only
-        # know what happened yesterday (lag 1) and before.
 
         df[f"r2_lag{lag}"] = r.shift(lag) ** 2
-        # Squared lagged return — proxy for daily variance.
-        # This is implicitly what GARCH uses: ε²_{t-1} in its equation.
 
-        df[f"absr_lag{lag}"] = r.shift(lag).abs()
-        # Absolute return — alternative variance proxy, less sensitive
-        # to extreme outliers than squaring.
+        df[f"absr_lag{lag}"] = r.shift(lag).abs() # Absolute return — alternative variance proxy, less sensitive to extreme outliers than squaring.
 
-    # ── Section 3.2: Rolling volatility statistics ────────────────────────────
+    # ──  Rolling volatility statistics
 
     for w in ROLLING_WINDOWS:
-        # Rolling standard deviation: historical vol at this lookback.
-        # .shift(1) is critical here — the rolling window at time t
-        # must only use data up to t-1. Without shift(1), the window
-        # at time t would include t's own return (look-ahead bias).
-        df[f"rolling_std_{w}d"] = (
-            r.shift(1).rolling(window=w).std()
-        )
 
-        df[f"rolling_mean_{w}d"] = (
-            r.shift(1).rolling(window=w).mean()
-        )
+        df[f"rolling_std_{w}d"] = (r.shift(1).rolling(window=w).std())
+
+        df[f"rolling_mean_{w}d"] = (r.shift(1).rolling(window=w).mean())
 
     # Realised vol ratio: short-term vol divided by monthly vol.
     # Ratio > 1 means recent vol has spiked above its monthly baseline.
     # This is a regime-change early warning signal.
-    df["vol_ratio_5_21"] = (
-        df["rolling_std_5d"] / df["rolling_std_21d"].replace(0, np.nan)
-    )
+    df["vol_ratio_5_21"] = (df["rolling_std_5d"] / df["rolling_std_21d"].replace(0, np.nan))
 
-    # ── Section 3.3: Regime indicators ────────────────────────────────────────
+    # ──  Regime indicators 
 
     vix = macro["VIX"].copy()
 
     df["vix_level"] = vix.reindex(df.index)
     df["vix_change"] = vix.diff(1).reindex(df.index)
     # vix.diff(1) = VIX_t - VIX_{t-1}: daily change in the fear gauge.
-    # Sudden spikes in VIX precede volatility clustering events.
 
     # VIX regime bucket — ordinal encoding of the four regimes.
     # 0 = Calm (<15), 1 = Normal (15-25), 2 = Elevated (25-35), 3 = Crisis (>35)
@@ -148,53 +118,32 @@ def build_features(ticker, returns, macro):
     ma_200 = price_path.rolling(200, min_periods=1).mean()
     df["ma_crossover"] = (price_path > ma_200).astype(int).reindex(df.index)
 
-    # ── Section 3.4: Exogenous macro features ─────────────────────────────────
+    # ── Exogenous macro features
 
     dgs10 = macro["DGS10"].copy()
 
     df["dgs10_level"]    = dgs10.reindex(df.index)
     df["dgs10_change_1d"] = dgs10.diff(1).reindex(df.index)
     df["dgs10_change_5d"] = dgs10.diff(5).reindex(df.index)
-    # Rate of change in yields matters more than the level for equity vol.
-    # A rapid rise in yields stresses equity valuations (2022 analog).
 
     # VRP proxy: VIX / rolling 21-day realised vol
     # High VRP means market is pricing in more fear than recently observed.
     # When VRP is high and then mean-reverts, vol tends to fall.
-    df["vrp_proxy"] = (
-        df["vix_level"] / (df["rolling_std_21d"] * np.sqrt(252) * 100)
-        # rolling_std_21d is in daily log-return units.
-        # Annualise: multiply by sqrt(252).
-        # Convert to percentage points: multiply by 100.
-        # VIX is already in annualised percentage points, so units now match.
-    ).replace([np.inf, -np.inf], np.nan)
+    df["vrp_proxy"] = (df["vix_level"] / (df["rolling_std_21d"] * np.sqrt(252) * 100)).replace([np.inf, -np.inf], np.nan)
 
-    # ── Target variable construction ──────────────────────────────────────────
-    # y_t = ln(r²_{t+1})
-    # The label for today's row is the log of tomorrow's squared return.
-    # .shift(-1) shifts the series BACKWARDS:
-    #   row at date t gets the value that was at date t+1.
-    # This means: "what actually happened the next day".
-    #
-    # CRITICAL: the last row will have NaN as its target (no t+1 exists).
-    # We drop it below. Never drop it before verifying it is NaN.
-
+    # ── Target variable construction
     squared_returns = r ** 2
     df["target"] = np.log(squared_returns.shift(-1).replace(0, np.nan))
     # We take log to reduce skewness — squared returns are right-skewed.
     # np.log(0) = -inf, so we replace 0 with NaN before logging.
 
-    # ── Clean up ──────────────────────────────────────────────────────────────
-
+    # ── Clean up 
     # Verify the last row has NaN target before dropping
     assert pd.isna(df["target"].iloc[-1]), (
         "Last row should have NaN target (no t+1 observation). "
         "Check .shift(-1) alignment."
     )
-
-    # Drop rows with any NaN — caused by:
-    # (a) initial lags and rolling window warm-up period
-    # (b) the final row with no target
+    # Drop rows with any NaN 
     n_before = len(df)
     df = df.dropna()
     n_after  = len(df)
@@ -204,7 +153,7 @@ def build_features(ticker, returns, macro):
     return df
 
 
-# ── Correlation heatmap (Plot P3) ─────────────────────────────────────────────
+# ── Correlation heatmap 
 
 def plot_correlation_heatmap(df, ticker):
     """
@@ -227,7 +176,7 @@ def plot_correlation_heatmap(df, ticker):
     sns.heatmap(
         corr,
         mask=mask,
-        cmap="RdBu_r",      # red = positive, blue = negative correlation
+        cmap="RdBu_r",    
         center=0,
         vmin=-1, vmax=1,
         annot=True,
@@ -243,13 +192,13 @@ def plot_correlation_heatmap(df, ticker):
     )
     plt.tight_layout()
 
-    out_path = RES_DIR / f"P3_correlation_heatmap_{ticker}.png"
+    out_path = RES_DIR / f"correlation_heatmap_{ticker}.png"
     plt.savefig(out_path, dpi=300, bbox_inches="tight")
     plt.close()
-    print(f"  ✓ Saved → results/P3_correlation_heatmap_{ticker}.png")
+    print(f"  ✓ Saved → results/correlation_heatmap_{ticker}.png")
 
 
-# ── Feature summary ────────────────────────────────────────────────────────────
+# ── Feature summary
 
 def print_feature_summary(df, ticker):
     feature_cols = [c for c in df.columns if c != "target"]
@@ -270,12 +219,11 @@ def print_feature_summary(df, ticker):
         print(f"    {feat:<30s} {val:.4f}")
 
 
-# ── Main ───────────────────────────────────────────────────────────────────────
+# ── Main 
 
 def main():
-    section("STEP 2 — Feature engineering")
+    section("Feature engineering")
 
-    # Load outputs from step1
     returns = pd.read_parquet(RAW_DIR / "returns.parquet")
     macro   = pd.read_parquet(RAW_DIR / "macro.parquet")
 
@@ -319,7 +267,7 @@ def main():
         print(f"  {ticker}: {df.shape[0]} rows, {len(feat_cols)} features, "
               f"target range [{df['target'].min():.3f}, {df['target'].max():.3f}]")
 
-    print(f"\n✓ step2_features.py complete.\n")
+    print(f"\n✓ feature_eng.py complete.\n")
 
 
 if __name__ == "__main__":
