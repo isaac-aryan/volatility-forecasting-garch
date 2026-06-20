@@ -1,19 +1,3 @@
-"""
-step5_evaluate.py
-=================
-Loads all GARCH and ML forecast CSVs from steps 3 and 4.
-Produces the master comparison table, regime-segmented metrics,
-four publication plots, and the Diebold-Mariano test result.
-
-Outputs (saved to results/):
-    model_comparison.csv          — master table: all models × metrics × regimes
-    P5_predicted_vs_actual.png    — forecast vs actual for all models
-    P6_rolling_rmse.png           — rolling 63-day RMSE over time
-    P7_regime_bar_chart.png       — RMSE and QLIKE by VIX regime
-    P9_shap_beeswarm.png          — SHAP feature importance for XGBoost
-    diebold_mariano_results.csv   — DM test: best GARCH vs best ML
-"""
-
 import sys
 import warnings
 import numpy as np
@@ -28,7 +12,7 @@ warnings.filterwarnings("ignore")
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from metrics import rmse, qlike, diebold_mariano
 
-# ── Paths ──────────────────────────────────────────────────────────────────────
+# ── Paths 
 
 ROOT      = Path(__file__).resolve().parent.parent
 GARCH_DIR = ROOT / "results" / "garch"
@@ -37,12 +21,11 @@ RES_DIR   = ROOT / "results"
 RAW_DIR   = ROOT / "data" / "raw"
 PROC_DIR  = ROOT / "data" / "processed"
 
-# ── Config ─────────────────────────────────────────────────────────────────────
+# ── Config
 
-# VIX thresholds — same as step2 and step3
+# VIX thresholds
 VIX_THRESHOLDS = {"Calm": 15, "Normal": 25, "Elevated": 35}
 
-# Consistent colour palette across all plots
 COLOURS = {
     "GARCH":        "#185FA5",
     "EGARCH":       "#0F6E56",
@@ -68,15 +51,10 @@ plt.rcParams.update({
 def section(title):
     print(f"\n{'='*60}\n  {title}\n{'='*60}")
 
-# ── Load all forecasts ─────────────────────────────────────────────────────────
+# ── Load all forecasts
 
 def load_all_forecasts():
-    """
-    Loads all walk-forward forecast CSVs from steps 3 and 4.
-    Returns a dict: {model_name: DataFrame}.
-    Each DataFrame has columns: log_forecast, target, forecast_var,
-    actual_var, and optionally 'fold'.
-    """
+    
     section("Loading all walk-forward forecasts")
     forecasts = {}
 
@@ -105,7 +83,7 @@ def load_all_forecasts():
     return forecasts
 
 
-# ── VIX regime assignment ──────────────────────────────────────────────────────
+# ── VIX regime assignment 
 
 def assign_vix_regime(forecasts):
     """
@@ -116,9 +94,6 @@ def assign_vix_regime(forecasts):
         Normal   — 15 ≤ VIX < 25
         Elevated — 25 ≤ VIX < 35
         Crisis   — VIX ≥ 35
-
-    The regime is added as a column to every forecast DataFrame.
-    This is the segmentation used in the regime bar chart (P7).
     """
     section("Assigning VIX regimes")
     macro = pd.read_parquet(RAW_DIR / "macro.parquet")
@@ -148,13 +123,11 @@ def assign_vix_regime(forecasts):
     return forecasts
 
 
-# ── Master comparison table ────────────────────────────────────────────────────
+# ── Master comparison table 
 
 def build_comparison_table(forecasts):
     """
     Computes RMSE and QLIKE for every model × regime combination.
-    Returns a DataFrame where rows are models and columns are metric×regime.
-    This is the master table that appears in your report.
     """
     section("Building master comparison table")
 
@@ -220,17 +193,6 @@ def build_comparison_table(forecasts):
 def run_dm_test(forecasts):
     """
     Runs the Diebold-Mariano test between best GARCH and best ML model.
-
-    Best GARCH = GJR-GARCH (lowest RMSE in step3)
-    Best ML    = RandomForest (lowest RMSE in step4)
-
-    The DM test asks: is the difference in forecast accuracy statistically
-    significant, or could it be random noise? p < 0.05 means the winner
-    is genuinely better, not just lucky.
-
-    We run the test on the overlapping date range where both models
-    made forecasts — they cover the same folds so this is the full
-    walk-forward period.
     """
     section("Diebold-Mariano test: GJR-GARCH vs RandomForest")
 
@@ -289,15 +251,11 @@ def run_dm_test(forecasts):
     return dm_stat, p_val
 
 
-# ── Plot P5: Predicted vs Actual ──────────────────────────────────────────────
+# ── Plot Predicted vs Actual 
 
 def plot_predicted_vs_actual(forecasts):
-    """
-    P5: Time series of forecast vs actual log-variance for each model.
-    Focus on the 2020 COVID period — this is where differences are starkest.
-    One panel per model family (GARCH vs ML), with actual overlaid.
-    """
-    section("Generating P5 — Predicted vs Actual")
+
+    section("Generating — Predicted vs Actual")
 
     models_to_plot = ["GJR-GARCH", "GARCH-t", "RandomForest", "XGBoost"]
     fig, axes = plt.subplots(2, 2, figsize=(14, 8), sharex=False)
@@ -316,7 +274,7 @@ def plot_predicted_vs_actual(forecasts):
         mask = (df.index >= zoom_start) & (df.index <= zoom_end)
         sub  = df[mask]
 
-        # Plot actual (same for all models)
+        # Plot actual 
         ax.plot(sub.index, sub["target"],
                 color="#CCCCCC", linewidth=0.8,
                 alpha=0.9, label="Actual log-variance", zorder=1)
@@ -336,10 +294,10 @@ def plot_predicted_vs_actual(forecasts):
         ax.set_ylabel("Log-variance")
         ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y"))
 
-    fig.suptitle("P5 — Predicted vs Actual Log-Variance (2019–2022)",
+    fig.suptitle("Predicted vs Actual Log-Variance (2019–2022)",
                  fontsize=12, y=1.01)
     plt.tight_layout()
-    out = RES_DIR / "P5_predicted_vs_actual.png"
+    out = RES_DIR / "predicted_vs_actual.png"
     plt.savefig(out, dpi=300, bbox_inches="tight")
     plt.close()
     print(f"  ✓ Saved → results/P5_predicted_vs_actual.png")
@@ -349,15 +307,14 @@ def plot_predicted_vs_actual(forecasts):
 
 def plot_rolling_rmse(forecasts):
     """
-    P6: 63-day (quarterly) rolling RMSE for all primary models on one chart.
+    63-day (quarterly) rolling RMSE for all primary models on one chart.
 
-    This shows WHEN each model struggles relative to others.
-    You will see all models spike during COVID (Fold 4) — the question
+    This shows WHEN each model struggles relative to others. All models spike during COVID (Fold 4) — the question
     is which spike is tallest and which returns to baseline fastest.
 
     Window = 63 trading days ≈ one calendar quarter.
     """
-    section("Generating P6 — Rolling RMSE over time")
+    section("Generating — Rolling RMSE over time")
 
     models_to_plot = ["GJR-GARCH", "GARCH-t", "RandomForest", "XGBoost", "RollingStd"]
     window = 63
@@ -405,19 +362,11 @@ def plot_rolling_rmse(forecasts):
     print(f"  ✓ Saved → results/P6_rolling_rmse.png")
 
 
-# ── Plot P7: Regime-segmented bar chart ───────────────────────────────────────
+# ── Regime-segmented bar chart 
 
 def plot_regime_bar_chart(comparison_df):
-    """
-    P7: RMSE and QLIKE for each model, broken down by VIX regime.
-    This is the visual centrepiece of your results section.
 
-    What to look for:
-    - Crisis column: which model degrades least?
-    - GARCH vs ML: does the relationship flip between calm and crisis?
-    - QLIKE Crisis: GARCH should dominate here — fat-tail protection matters most
-    """
-    section("Generating P7 — Regime-segmented bar chart")
+    section("Generating — Regime-segmented bar chart")
 
     models = ["GJR-GARCH", "GARCH-t", "RandomForest", "XGBoost", "RollingStd"]
     regimes = ["Calm", "Normal", "Elevated", "Crisis"]
@@ -451,7 +400,7 @@ def plot_regime_bar_chart(comparison_df):
     plt.suptitle("Model Performance by Market Regime — GARCH vs ML",
                  fontsize=12, y=1.01)
     plt.tight_layout()
-    out = RES_DIR / "P7_regime_bar_chart.png"
+    out = RES_DIR / "regime_bar_chart.png"
     plt.savefig(out, dpi=300, bbox_inches="tight")
     plt.close()
     print(f"  ✓ Saved → results/P7_regime_bar_chart.png")
@@ -461,26 +410,16 @@ def plot_regime_bar_chart(comparison_df):
 
 def plot_shap(forecasts):
     """
-    P9: SHAP beeswarm and bar chart for XGBoost on the full training data.
+    SHAP beeswarm and bar chart for XGBoost on the full training data.
 
-    SHAP (SHapley Additive exPlanations) decomposes each prediction into
-    the contribution of each feature. For each prediction, you get a number
-    per feature saying "this feature pushed the forecast up/down by X."
 
     The beeswarm plot shows:
     - Y-axis: features ranked by importance (most important at top)
     - X-axis: SHAP value (positive = pushed forecast higher = more vol)
     - Colour: feature value (red = high, blue = low)
 
-    What to expect:
-    - VIX level and lagged squared returns should dominate
-    - This confirms the feature engineering choices in step 2 were correct
-    - VIX being most important validates using it as a regime indicator
-
-    We refit XGBoost on the full training window (2013–2019) with the
-    best hyperparameters from step 4, then compute SHAP on the test set.
     """
-    section("Generating P9 — SHAP feature importance (XGBoost)")
+    section("Generating — SHAP feature importance (XGBoost)")
 
     import xgboost as xgb
     from sklearn.preprocessing import StandardScaler
@@ -503,7 +442,7 @@ def plot_shap(forecasts):
     X_test_s  = pd.DataFrame(scaler.transform(X_test),
                               columns=feature_cols, index=X_test.index)
 
-    # Load best params saved in step 4
+    
     import json
     params_path = ML_DIR / "best_params_XGBoost.json"
     with open(params_path) as f:
@@ -514,15 +453,13 @@ def plot_shap(forecasts):
     model.fit(X_train_s, y_train)
 
     # SHAP TreeExplainer is the fast, exact SHAP implementation for tree models
-    # It decomposes each prediction into per-feature contributions
     explainer   = shap.TreeExplainer(model)
     shap_values = explainer.shap_values(X_test_s)
-    # shap_values shape: (n_samples, n_features)
-    # shap_values[i, j] = contribution of feature j to prediction i
+
 
     fig, axes = plt.subplots(1, 2, figsize=(16, 7))
 
-    # ── Bar chart: mean |SHAP| per feature (global importance) ───────────
+    # ── Bar chart: mean |SHAP| per feature (global importance)
     ax = axes[0]
     mean_abs_shap = np.abs(shap_values).mean(axis=0)
     sorted_idx    = np.argsort(mean_abs_shap)[::-1][:15]  # top 15
@@ -533,7 +470,7 @@ def plot_shap(forecasts):
         color="#185FA5", alpha=0.8
     )
     ax.set_xlabel("Mean |SHAP value|")
-    ax.set_title("P9a — Global Feature Importance (XGBoost)", fontsize=11)
+    ax.set_title("Global Feature Importance (XGBoost)", fontsize=11)
 
     # ── Beeswarm: SHAP value vs feature value ────────────────────────────
     ax2 = axes[1]
@@ -558,7 +495,7 @@ def plot_shap(forecasts):
     ax2.set_yticklabels(top_features[::-1], fontsize=9)
     ax2.axvline(0, color="#333333", linewidth=0.8, linestyle="--")
     ax2.set_xlabel("SHAP value (positive = higher vol forecast)")
-    ax2.set_title("P9b — SHAP Beeswarm (top 10 features)", fontsize=11)
+    ax2.set_title("SHAP Beeswarm (top 10 features)", fontsize=11)
 
     # Colourbar
     sm = plt.cm.ScalarMappable(
@@ -569,19 +506,19 @@ def plot_shap(forecasts):
     cbar = plt.colorbar(sm, ax=ax2, shrink=0.6, pad=0.02)
     cbar.set_label("Feature value (low → high)", fontsize=8)
 
-    plt.suptitle("P9 — SHAP Feature Attribution: XGBoost Volatility Forecasts",
+    plt.suptitle("SHAP Feature Attribution: XGBoost Volatility Forecasts",
                  fontsize=12, y=1.01)
     plt.tight_layout()
     out = RES_DIR / "P9_shap_beeswarm.png"
     plt.savefig(out, dpi=300, bbox_inches="tight")
     plt.close()
-    print(f"  ✓ Saved → results/P9_shap_beeswarm.png")
+    print(f"  ✓ Saved → results/shap_beeswarm.png")
 
 
-# ── Main ───────────────────────────────────────────────────────────────────────
+# ── Main 
 
 def main():
-    section("STEP 5 — Evaluation, regime analysis, and interpretation")
+    section("Evaluation, regime analysis, and interpretation")
 
     # Load all forecasts
     forecasts = load_all_forecasts()
@@ -637,7 +574,7 @@ def main():
               "P7_regime_bar_chart.png", "P9_shap_beeswarm.png"]:
         print(f"    results/{p}")
 
-    print(f"\n✓ step5_evaluate.py complete.\n")
+    print(f"\n✓ evaluate.py complete.\n")
 
 
 if __name__ == "__main__":

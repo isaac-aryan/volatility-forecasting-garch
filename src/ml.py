@@ -1,9 +1,7 @@
 """
-step4_ml.py
-===========
-Trains baseline and ML models on the SPY feature matrix from step2.
+Trains baseline and ML models on the SPY feature matrix.
 Produces 1-step-ahead log-variance forecasts on both a fixed test split
-and six walk-forward folds — identical structure to step3_garch.py.
+and six walk-forward folds — identical structure to garch.py.
 
 Models trained:
     Naive baseline     — forecast = yesterday's squared return (log)
@@ -11,11 +9,6 @@ Models trained:
     Linear Regression  — OLS on the full feature set
     Random Forest      — 300 trees, tuned via TimeSeriesSplit CV
     XGBoost            — gradient boosted trees, tuned via TimeSeriesSplit CV
-
-Outputs (saved to results/ml/):
-    forecasts_fixed_{model}.csv   — fixed split forecasts (2023–2025)
-    forecasts_wf_{model}.csv      — walk-forward forecasts (2017–2023)
-    best_params_{model}.json      — best hyperparameters from CV
 """
 
 import json
@@ -32,7 +25,7 @@ import xgboost as xgb
 
 warnings.filterwarnings("ignore")
 
-# ── Paths ──────────────────────────────────────────────────────────────────────
+# ── Paths 
 
 ROOT    = Path(__file__).resolve().parent.parent
 PROC_DIR = ROOT / "data" / "processed"
@@ -40,17 +33,16 @@ RAW_DIR  = ROOT / "data" / "raw"
 ML_DIR   = ROOT / "results" / "ml"
 ML_DIR.mkdir(parents=True, exist_ok=True)
 
-# ── Config ─────────────────────────────────────────────────────────────────────
+# ── Config
 
 TICKER = "SPY"
 
-# Fixed split dates — identical to step3 for fair comparison
 TRAIN_END  = "2019-12-31"
 VAL_END    = "2022-12-31"
 TEST_START = "2023-01-01"
 TEST_END   = "2025-12-31"
 
-# Walk-forward fold definitions — identical to step3
+# Walk-forward fold definitions
 FOLDS = [
     ("2016-12-31", "2017-01-01", "2017-12-31", "Fold1_2017"),
     ("2017-12-31", "2018-01-01", "2018-12-31", "Fold2_2018"),
@@ -59,37 +51,23 @@ FOLDS = [
     ("2020-12-31", "2021-01-01", "2021-12-31", "Fold5_2021"),
     ("2021-12-31", "2022-01-01", "2023-12-31", "Fold6_2022_2023"),
 ]
-
-# Random seed for reproducibility — same seed everywhere means
-# anyone who clones your repo gets the same results
 SEED = 42
 
-# ── Helper ─────────────────────────────────────────────────────────────────────
+# ── Helper 
 
 def section(title):
     print(f"\n{'='*60}\n  {title}\n{'='*60}")
 
 
 def get_Xy(df):
-    """
-    Splits the feature DataFrame into X (features) and y (target).
 
-    Parameters
-    ----------
-    df : DataFrame with a 'target' column and all other columns as features
-
-    Returns
-    -------
-    X : DataFrame of features (everything except 'target')
-    y : Series — the target column (log of next day's squared return)
-    """
     feature_cols = [c for c in df.columns if c != "target"]
     X = df[feature_cols]
     y = df["target"]
     return X, y
 
 
-# ── Baseline models ────────────────────────────────────────────────────────────
+# ── Baseline models 
 
 def naive_forecast(df):
     """
@@ -577,7 +555,7 @@ def main():
     for f in sorted(ML_DIR.glob("*.json")):
         print(f"    {f.name}")
 
-    print(f"\n✓ step4_ml.py complete.\n")
+    print(f"\n✓ ml.py complete.\n")
 
 
 if __name__ == "__main__":
