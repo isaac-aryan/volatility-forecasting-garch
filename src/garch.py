@@ -1,6 +1,4 @@
 """
-step3_garch.py
-==============
 Fits four GARCH variants on SPY log returns using Maximum Likelihood
 Estimation via the arch library. Produces 1-step-ahead conditional
 variance forecasts on both a fixed split and six expanding walk-forward
@@ -22,7 +20,7 @@ Walk-forward folds:
     Fold 1: train 2013-2016, test 2017
     Fold 2: train 2013-2017, test 2018
     Fold 3: train 2013-2018, test 2019
-    Fold 4: train 2013-2019, test 2020  ← COVID stress fold
+    Fold 4: train 2013-2019, test 2020  (COVID stress fold)
     Fold 5: train 2013-2020, test 2021
     Fold 6: train 2013-2021, test 2022-2023
 """
@@ -38,25 +36,23 @@ from arch import arch_model
 
 warnings.filterwarnings("ignore")
 
-# ── Paths ──────────────────────────────────────────────────────────────────────
+# ── Paths 
 
 ROOT     = Path(__file__).resolve().parent.parent
 RAW_DIR  = ROOT / "data" / "raw"
 GARCH_DIR = ROOT / "results" / "garch"
 GARCH_DIR.mkdir(parents=True, exist_ok=True)
 
-# ── Config ─────────────────────────────────────────────────────────────────────
+# ── Config 
 
-TICKER = "SPY"   # GARCH is fitted on SPY only (primary asset)
+TICKER = "SPY"  
 
-# Fixed split dates — same as the ML models in step4 for fair comparison
 TRAIN_END   = "2019-12-31"
 VAL_END     = "2022-12-31"
 TEST_START  = "2023-01-01"
 TEST_END    = "2025-12-31"
 
-# Walk-forward fold definitions
-# Each fold: (train_end, test_start, test_end, fold_label)
+# Walk-forward fold definitions (train_end, test_start, test_end, fold_label)
 FOLDS = [
     ("2016-12-31", "2017-01-01", "2017-12-31", "Fold1_2017"),
     ("2017-12-31", "2018-01-01", "2018-12-31", "Fold2_2018"),
@@ -66,8 +62,7 @@ FOLDS = [
     ("2021-12-31", "2022-01-01", "2023-12-31", "Fold6_2022_2023"),
 ]
 
-# ── Helper ─────────────────────────────────────────────────────────────────────
-
+# ── Helper 
 def section(title):
     print(f"\n{'='*60}\n  {title}\n{'='*60}")
 
@@ -108,26 +103,8 @@ def check_stationarity(params, model_name):
 def build_model(model_name, returns_scaled):
     """
     Constructs the arch model object for a given model name.
-
-    The arch library uses a builder pattern: you specify the mean model,
-    the variance model, and the error distribution separately.
-
-    Parameters
-    ----------
-    model_name     : one of 'GARCH', 'EGARCH', 'GJR-GARCH', 'GARCH-t'
-    returns_scaled : return series scaled by 100 (arch convention — see note below)
-
-    Returns
-    -------
-    am : arch model object, ready to call .fit() on
-
-    Note on scaling by 100:
-    The arch library works more stably when returns are expressed as
-    percentages (e.g. 0.01 daily return → 1.0) rather than decimals.
-    This is purely numerical — it doesn't affect the model's predictions,
-    only the scale of the ω parameter. We undo the scaling when saving
-    forecasts.
     """
+
     if model_name == "GARCH":
         # Standard GARCH(1,1) with Normal innovations
         # Mean model: Constant (just fits a mean return, typically ~0)
@@ -188,65 +165,37 @@ def build_model(model_name, returns_scaled):
     return am
 
 
-# ── Fit and forecast — single window ──────────────────────────────────────────
+# ── Fit and forecast — single window 
 
 def fit_and_forecast(model_name, train_returns, n_ahead=1):
     """
     Fits a GARCH model on train_returns and returns one 1-step-ahead
     conditional variance forecast.
 
-    Parameters
-    ----------
-    model_name    : str
-    train_returns : pd.Series of log returns for the training window
-    n_ahead       : int, forecast horizon (always 1 in this project)
-
-    Returns
-    -------
-    forecast_variance : float — the 1-step-ahead conditional variance
-                        in ORIGINAL scale (not scaled by 100²)
-    params            : dict of fitted parameter estimates
     """
     returns_scaled = train_returns * 100   # arch convention
 
     am  = build_model(model_name, returns_scaled)
     res = am.fit(
-        disp="off",          # suppress verbose convergence output
+        disp="off",         
         show_warning=False,
     )
-    # res is an ARCHModelResult object. Key attributes:
-    # res.params         — fitted parameter estimates
-    # res.forecast()     — generate forecasts
-    # res.conditional_volatility — in-sample fitted volatility
-
+    
     # Generate 1-step-ahead forecast
-    # horizon=1 means we want the forecast for t+1 given info at t
-    # reindex=False means we get the forecast as a simple array
     fc = res.forecast(horizon=n_ahead, reindex=False)
-
-    # fc.variance is a DataFrame; .values[0, 0] extracts the scalar
-    # The variance is in (return × 100)² units — divide by 100² to
-    # convert back to log-return² units
     forecast_var = fc.variance.values[0, 0] / (100 ** 2)
 
     params = dict(res.params)
     return forecast_var, params
 
 
-# ── Fixed split evaluation ─────────────────────────────────────────────────────
+# ── Fixed split evaluation 
 
 def run_fixed_split(returns, model_names):
     """
     Fits each model on the training window (2013–2019) and generates
     1-step-ahead forecasts for every day in the test window (2023–2025).
 
-    This uses a recursive (expanding) scheme within the test window:
-    after each test-day forecast, we add that day to the training set
-    before forecasting the next day. This mirrors real deployment.
-
-    This is the most time-consuming function — it refits the model
-    once per test-day observation. For ~756 test days × 4 models,
-    expect this to take several minutes.
     """
     section("Fixed split evaluation (2023–2025 test set)")
 
@@ -263,8 +212,7 @@ def run_fixed_split(returns, model_names):
         forecasts = []
         params_list = []
 
-        # Expanding window: start with 2013-2019 training data,
-        # add one observation at a time as we move through the test period
+        # Expanding window: start with 2013-2019 training data, add one observation at a time as we move through the test period
         current_train = train_base.copy()
 
         for i, test_date in enumerate(test_dates):
@@ -279,8 +227,6 @@ def run_fixed_split(returns, model_names):
                     params_list.append(params)
 
             except Exception as e:
-                # If MLE fails to converge on a particular window,
-                # fall back to the previous forecast rather than crashing
                 print(f"    Warning: {model_name} failed on {test_date}: {e}")
                 prev = forecasts[-1]["forecast_var"] if forecasts else np.nan
                 forecasts.append({"date": test_date, "forecast_var": prev})
@@ -295,11 +241,7 @@ def run_fixed_split(returns, model_names):
 
         # Add actual squared return for comparison
         fc_df["actual_var"] = (returns[test_mask] ** 2).values
-
-        # Compute actual log-variance target (matches step2 target)
         fc_df["target"] = np.log(fc_df["actual_var"].replace(0, np.nan))
-
-        # Log of forecast variance for comparison in log space
         fc_df["log_forecast"] = np.log(fc_df["forecast_var"].replace(0, np.nan))
 
         out_path = GARCH_DIR / f"forecasts_fixed_{model_name}.csv"
@@ -318,7 +260,7 @@ def run_fixed_split(returns, model_names):
     return results
 
 
-# ── Walk-forward evaluation ────────────────────────────────────────────────────
+# ── Walk-forward evaluation
 
 def run_walk_forward(returns, model_names):
     """
@@ -327,9 +269,6 @@ def run_walk_forward(returns, model_names):
     For each fold, the model is refit from scratch on the full
     expanding training window, then used to forecast the test period.
 
-    This is the methodologically correct evaluation for time-series models:
-    it simulates exactly what a practitioner would have observed at each
-    point in time, with no information from the future leaking into the fit.
     """
     section("Walk-forward evaluation (6 folds)")
 
@@ -378,7 +317,6 @@ def run_walk_forward(returns, model_names):
             all_wf_forecasts[model_name].extend(forecasts)
             print(f"    {model_name}: {len(forecasts)} forecasts generated")
 
-    # Consolidate and save
     wf_results = {}
     for model_name in model_names:
         fc_df = pd.DataFrame(all_wf_forecasts[model_name]).set_index("date")
@@ -395,16 +333,12 @@ def run_walk_forward(returns, model_names):
     return wf_results
 
 
-# ── Plot P4: GARCH conditional variance vs actual r² ─────────────────────────
-
+# ── GARCH conditional variance vs actual r²
 def plot_garch_vs_rv(returns, model_name="GARCH"):
     """
     Fits GARCH on the full training window and plots its in-sample
     conditional variance against actual squared returns.
 
-    This is Plot P4 — it visually demonstrates that GARCH captures
-    volatility clustering. You should see the model's line spiking
-    in the same places as the actual squared returns.
     """
     section(f"Generating Plot P4 — GARCH conditional variance vs actual r²")
 
@@ -414,8 +348,7 @@ def plot_garch_vs_rv(returns, model_name="GARCH"):
     am  = build_model(model_name, train_returns)
     res = am.fit(disp="off", show_warning=False)
 
-    # res.conditional_volatility gives σ_t (not σ²_t) in scaled units
-    # Square it and divide by 100² to get variance in return units
+    # res.conditional_volatility gives σ_t (not σ²_t) in scaled units, Square it and divide by 100² to get variance in return units
     cond_var = (res.conditional_volatility ** 2) / (100 ** 2)
 
     actual_r2 = returns[train_mask] ** 2
@@ -458,12 +391,11 @@ def plot_garch_vs_rv(returns, model_name="GARCH"):
     print(f"  ✓ Saved → results/garch/P4_garch_vs_rv_SPY.png")
 
 
-# ── Quick evaluation summary ──────────────────────────────────────────────────
+# ── Quick evaluation summary 
 
 def print_evaluation_summary(wf_results):
     """
     Prints RMSE on log-variance forecasts for each model across all folds.
-    This is a quick sanity check — full evaluation happens in step5.
     """
     import sys
     sys.path.insert(0, str(ROOT / "src"))
@@ -488,19 +420,17 @@ def print_evaluation_summary(wf_results):
         print(f"  {model_name:<15} {r:>14.6f} {q:>15.6f}")
 
 
-# ── Main ───────────────────────────────────────────────────────────────────────
+# ── Main
 
 def main():
-    section("STEP 3 — GARCH family models")
+    section("GARCH family models")
 
-    # Load SPY returns from step1
     returns = pd.read_parquet(RAW_DIR / "returns.parquet")["SPY"]
     print(f"  SPY returns loaded: {len(returns)} observations")
     print(f"  Date range: {returns.index[0].date()} → {returns.index[-1].date()}")
 
     model_names = ["GARCH", "EGARCH", "GJR-GARCH", "GARCH-t"]
 
-    # Generate Plot P4 first — fast, good sanity check
     plot_garch_vs_rv(returns, model_name="GARCH")
 
     # Walk-forward evaluation across 6 folds
@@ -510,7 +440,6 @@ def main():
     # Fixed split evaluation on 2023–2025 test set
     fixed_results = run_fixed_split(returns, model_names)
 
-    # Quick summary
     print_evaluation_summary(wf_results)
 
     section("Summary")
@@ -523,7 +452,7 @@ def main():
     for f in sorted(GARCH_DIR.glob("*.png")):
         print(f"    {f.name}")
 
-    print(f"\n✓ step3_garch.py complete.\n")
+    print(f"\n✓ garch.py complete.\n")
 
 
 if __name__ == "__main__":
