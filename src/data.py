@@ -1,21 +1,3 @@
-"""
-step1_data.py
-=============
-Downloads raw price and macro data, computes log returns,
-runs pre-modelling diagnostics, and saves clean Parquet files.
-
-Outputs (saved to data/raw/):
-    prices_raw.parquet    — adjusted close prices for SPY, AAPL, JPM
-    returns.parquet       — log returns, aligned to SPY trading calendar
-    macro.parquet         — VIX and DGS10, forward-filled, aligned
-
-Diagnostics printed to console:
-    ADF test on log returns (stationarity)
-    Ljung-Box test on squared returns (volatility clustering)
-    Jarque-Bera test on log returns (normality)
-    ACF/PACF plots saved to results/
-"""
-
 import os
 import warnings
 import numpy as np
@@ -34,7 +16,7 @@ from scipy.stats import jarque_bera
 
 warnings.filterwarnings("ignore")
 
-# ── Paths ──────────────────────────────────────────────────────────────────────
+# ── Paths 
 
 ROOT    = Path(__file__).resolve().parent.parent   # project root
 RAW_DIR = ROOT / "data" / "raw"
@@ -42,7 +24,7 @@ RES_DIR = ROOT / "results"
 RAW_DIR.mkdir(parents=True, exist_ok=True)
 RES_DIR.mkdir(parents=True, exist_ok=True)
 
-# ── Config ─────────────────────────────────────────────────────────────────────
+# ── Config 
 
 TICKERS    = ["SPY", "AAPL", "JPM"]
 START_DATE = "2013-01-01"
@@ -54,14 +36,14 @@ FRED_SERIES = {
 WINSOR_LOW  = 0.001   # 0.1th percentile
 WINSOR_HIGH = 0.999   # 99.9th percentile
 
-# ── Helper ─────────────────────────────────────────────────────────────────────
+# ── Helper 
 
 def section(title):
     print(f"\n{'='*60}")
     print(f"  {title}")
     print(f"{'='*60}")
 
-# ── 1. Download price data ─────────────────────────────────────────────────────
+# ── 1. Download price data 
 
 def download_prices():
     section("1. Downloading price data via yfinance")
@@ -70,13 +52,9 @@ def download_prices():
         TICKERS,
         start=START_DATE,
         end=END_DATE,
-        auto_adjust=True,   # adjusts for splits and dividends automatically
+        auto_adjust=True,   
         progress=False,
-    )["Close"]              # we only need the closing price
-
-    # yfinance returns a DataFrame with a MultiIndex column if >1 ticker,
-    # or a plain Series for a single ticker. With auto_adjust=True and
-    # multiple tickers, "Close" gives us a clean (date × ticker) DataFrame.
+    )["Close"]             
 
     raw.index = pd.to_datetime(raw.index)
     raw.index.name = "date"
@@ -88,11 +66,11 @@ def download_prices():
     print(f"  Missing values:\n{raw.isnull().sum()}")
 
     raw.to_parquet(RAW_DIR / "prices_raw.parquet")
-    print(f"\n  ✓ Saved → data/raw/prices_raw.parquet")
+    print(f"\n  Saved → data/raw/prices_raw.parquet")
     return raw
 
 
-# ── 2. Download macro data from FRED ──────────────────────────────────────────
+# ── 2. Download macro data from FRED
 
 def download_macro(spy_index):
     """
@@ -101,7 +79,7 @@ def download_macro(spy_index):
     """
     section("2. Downloading macro data via FRED")
 
-    load_dotenv()                          # reads .env file into environment
+    load_dotenv()              
     api_key = os.environ.get("FRED_API_KEY")
     if not api_key:
         raise EnvironmentError(
@@ -140,11 +118,11 @@ def download_macro(spy_index):
     print(f"  Remaining missing values:\n{missing_after}")
 
     macro.to_parquet(RAW_DIR / "macro.parquet")
-    print(f"\n  ✓ Saved → data/raw/macro.parquet")
+    print(f"\n  Saved → data/raw/macro.parquet")
     return macro
 
 
-# ── 3. Compute log returns ─────────────────────────────────────────────────────
+# ── 3. Compute log returns
 
 def compute_returns(prices):
     """
@@ -160,8 +138,7 @@ def compute_returns(prices):
     log_returns = np.log(prices / prices.shift(1)).dropna()
 
     # Winsorise: clip extreme outliers at the 0.1th and 99.9th percentiles.
-    # This prevents a single data error or truly extreme outlier from
-    # dominating the model. We document the percentile thresholds above.
+    # This prevents a single data error or truly extreme outlier from dominating the model. We document the percentile thresholds above.
     for col in log_returns.columns:
         low  = log_returns[col].quantile(WINSOR_LOW)
         high = log_returns[col].quantile(WINSOR_HIGH)
@@ -175,40 +152,30 @@ def compute_returns(prices):
     print(log_returns.describe().round(5).to_string())
 
     log_returns.to_parquet(RAW_DIR / "returns.parquet")
-    print(f"\n  ✓ Saved → data/raw/returns.parquet")
+    print(f"\n  Saved → data/raw/returns.parquet")
     return log_returns
 
 
-# ── 4. Pre-modelling diagnostics ──────────────────────────────────────────────
+# ── 4. Pre-modelling diagnostics
 
 def run_diagnostics(returns, macro):
-    """
-    Four mandatory tests before fitting any GARCH model.
-    Results are printed to console AND saved as a plot.
-    """
+
     section("4. Pre-modelling diagnostics")
 
     spy = returns["SPY"]
 
-    # ── Test 1: Augmented Dickey-Fuller ───────────────────────────────────────
-    # H0: the series has a unit root (is non-stationary)
-    # We want to REJECT H0, confirming log returns are stationary.
-    # A p-value below 0.05 means we reject at 95% confidence.
+    # ── Test 1: Augmented Dickey-Fuller 
 
     print("\n  [Test 1] Augmented Dickey-Fuller — stationarity of SPY log returns")
     adf_result = adfuller(spy, autolag="AIC")
     adf_stat, adf_p = adf_result[0], adf_result[1]
-    adf_conclusion = "STATIONARY ✓" if adf_p < 0.05 else "NON-STATIONARY ✗"
+    adf_conclusion = "STATIONARY" if adf_p < 0.05 else "NON-STATIONARY"
     print(f"  ADF statistic : {adf_stat:.4f}")
     print(f"  p-value       : {adf_p:.6f}")
     print(f"  Conclusion    : {adf_conclusion}")
     print(f"  (Report this: p={adf_p:.4f}, reject H0 of unit root → returns are stationary)")
 
-    # ── Test 2: Ljung-Box on squared returns ──────────────────────────────────
-    # Tests whether squared returns (r²) are autocorrelated across lags.
-    # Autocorrelation in r² is the empirical signature of volatility clustering.
-    # H0: no autocorrelation at the given lags.
-    # We want to REJECT H0 at multiple lags → GARCH is justified.
+    # ── Test 2: Ljung-Box on squared returns
 
     print("\n  [Test 2] Ljung-Box — autocorrelation in squared returns (volatility clustering)")
     lb_result = acorr_ljungbox(spy**2, lags=[5, 10, 20], return_df=True)
@@ -218,11 +185,8 @@ def run_diagnostics(returns, macro):
     print(f"\n  Conclusion: {lb_conclusion}")
     print(f"  (Report: Ljung-Box Q(10) p={lb_p_lag10:.4f} → significant autocorrelation in r² → GARCH justified)")
 
-    # ── Test 3: Jarque-Bera normality test ────────────────────────────────────
+    # ── Test 3: Jarque-Bera normality test
     # Tests whether the return distribution is Gaussian (normal).
-    # H0: returns are normally distributed.
-    # We EXPECT to reject H0 — equity returns have fat tails.
-    # Rejecting normality justifies using a Student-t GARCH variant.
 
     print("\n  [Test 3] Jarque-Bera — normality of SPY log returns")
     jb_stat, jb_p = jarque_bera(spy)
@@ -234,7 +198,7 @@ def run_diagnostics(returns, macro):
     print(f"  Conclusion   : {jb_conclusion}")
     print(f"  (Report: reject normality → Student-t GARCH variant justified)")
 
-    # ── Test 4: ACF/PACF plots ────────────────────────────────────────────────
+    # ── Test 4: ACF/PACF plots 
     # Visual complement to Ljung-Box.
     # ACF of r_t:  should show near-zero autocorrelation (returns are unpredictable)
     # ACF of r_t²: should show slow decay (volatility has memory — clustering)
@@ -269,7 +233,7 @@ def _plot_acf_pacf(spy):
     print(f"  ✓ Saved → results/diagnostic_acf.png")
 
 
-# ── Main ───────────────────────────────────────────────────────────────────────
+# ── Main
 
 def main():
     print("\nSTEP 1 — Data download and diagnostics")

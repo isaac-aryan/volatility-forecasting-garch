@@ -1,6 +1,4 @@
 """
-metrics.py
-==========
 Standalone evaluation utilities. No dependencies on other src files.
 Import this module from any step file.
 
@@ -168,9 +166,7 @@ def diebold_mariano(e1, e2, h=1, criterion="mse"):
     return float(dm_stat), p_value
 
 
-# ── Self-test ──────────────────────────────────────────────────────────────────
-# Run this file directly to verify all functions work correctly.
-# python src/metrics.py
+# ── Self-test (Run to verify all functions work correctly)
 
 if __name__ == "__main__":
     print("Running metrics.py self-test...\n")
